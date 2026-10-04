@@ -1,0 +1,213 @@
+// Trading Journal & Analytics - datový model
+// SQLite pro lokální běh, připraveno na pozdější přechod na PostgreSQL
+// (stačí změnit `provider` a `DATABASE_URL`, Prisma modely zůstávají stejné).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// Uživatel aplikace. Dnes jen jeden lokální uživatel, architektura
+/// ale počítá s více uživateli (multi-tenant) do budoucna.
+model User {
+  id        String    @id @default(cuid())
+  name      String    @default("Trader")
+  email     String?   @unique
+  locale    String    @default("cs") // "cs" | "en" - připraveno na i18n
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  accounts  Account[]
+}
+
+/// Obchodní účet (podporuje více účtů současně - Topstep, FTMO, Personal...).
+model Account {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name              String
+  currency          String   @default("USD")
+  startingBalance   Float    @default(10000)
+  defaultRiskPct    Float    @default(1)
+  defaultInstrument String   @default("NQ")
+  defaultSession    String   @default("New York")
+  commissionPerSide Float    @default(0)
+  timezone          String   @default("Europe/Prague")
+  breakevenThreshold Float   @default(0) // v jednotkách R, např. 0.1 = 0.1R
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  trades     Trade[]
+  strategies Strategy[]
+  tags       Tag[]
+  instruments Instrument[]
+}
+
+/// Vlastní instrumenty definované uživatelem (nad rámec výchozí nabídky).
+model Instrument {
+  id        String   @id @default(cuid())
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  symbol    String
+  createdAt DateTime @default(now())
+
+  @@unique([accountId, symbol])
+}
+
+/// Strategie / setup (Breakout, Pullback, Reversal, ...). Lze přidávat vlastní.
+model Strategy {
+  id          String   @id @default(cuid())
+  accountId   String
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  isCustom    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  trades Trade[]
+
+  @@unique([accountId, name])
+}
+
+/// Tag (#Aplus, #FOMO, #London, ...) - M:N vztah s obchody.
+model Tag {
+  id        String   @id @default(cuid())
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime @default(now())
+
+  trades TradeTag[]
+
+  @@unique([accountId, name])
+}
+
+model TradeTag {
+  tradeId String
+  tagId   String
+  trade   Trade  @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  tag     Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([tradeId, tagId])
+}
+
+/// Fixní, uživatelem definovaný seznam konfluencí (FVG, BPR, OB, RSI Cross 15M/5M/1H, HVN, POC).
+/// Je to čistě analytický atribut obchodu - NESMÍ nikdy ovlivnit výpočet risku,
+/// Position Size, PnL ani R:R (ty se počítají výhradně v src/lib/calculations.ts).
+model Confluence {
+  key       String   @id // "FVG" | "BPR" | "OB" | "RSI_15M" | "RSI_5M" | "RSI_1H" | "HVN" | "POC"
+  label     String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  trades TradeConfluence[]
+}
+
+model TradeConfluence {
+  tradeId       String
+  confluenceKey String
+  trade         Trade      @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  confluence    Confluence @relation(fields: [confluenceKey], references: [key], onDelete: Cascade)
+
+  @@id([tradeId, confluenceKey])
+}
+
+/// Screenshot grafu před/po obchodu.
+model Screenshot {
+  id        String   @id @default(cuid())
+  tradeId   String
+  trade     Trade    @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  type      String   // "BEFORE" | "AFTER"
+  url       String   // relativní cesta v /public/uploads
+  createdAt DateTime @default(now())
+}
+
+/// Jednotlivý obchod - jádro celé aplikace.
+model Trade {
+  id        String   @id @default(cuid())
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  // --- Basic data ---
+  instrument String
+  direction  String   // "LONG" | "SHORT"
+  date       DateTime // datum obchodu (bez času, UTC midnight)
+  time       String   // "HH:mm" vstupu
+  session    String   // "Asia" | "London" | "New York" | "Other"
+  timeframe  String   // "1m" | "5m" | "15m" | "30m" | "1H" | "4H" | "Daily"
+
+  // --- Trade parameters ---
+  entryPrice     Float
+  stopLoss       Float
+  takeProfit     Float?
+  exitPrice      Float?
+  exitTime       String? // "HH:mm" výstupu, pro výpočet duration
+  positionSize   Float
+  riskPercent    Float?
+  riskDollar     Float?
+  initialRiskDollar Float?
+  potentialProfitDollar Float?
+  potentialRR    Float?
+  realizedPnl    Float?
+  realizedRR     Float?
+  fees           Float    @default(0)
+  netPnl         Float?
+
+  // --- MFE/MAE/Ideal RR ---
+  mfe     Float? // Maximum Favorable Excursion v $
+  mae     Float? // Maximum Adverse Excursion v $
+  idealRR Float?
+
+  // --- Setup ---
+  strategyId      String?
+  strategy        Strategy? @relation(fields: [strategyId], references: [id])
+  entryReason     String?
+  marketCondition String?
+  trend           String? // "Bullish" | "Bearish" | "Neutral"
+  marketType      String? // "Trend" | "Range" | "Choppy"
+  isAPlus         Boolean @default(false)
+
+  // --- Trade management ---
+  movedSL          Boolean @default(false)
+  tookPartial      Boolean @default(false)
+  partialPercent   Float?
+  numPartials      Int?
+  avgExitPrice     Float?
+  followedPlan     Boolean @default(true)
+  revengeTrade     Boolean @default(false)
+  overtraded       Boolean @default(false)
+  accordingToSetup Boolean @default(true)
+
+  // --- Psychology ---
+  emotionBefore String?
+  emotionAfter  String?
+  confidence    Int?
+  discipline    Int?
+  patience      Int?
+  stress        Int?
+  notesSeen     String?
+  notesGood     String?
+  notesBad      String?
+  notesNext     String?
+
+  // --- Výsledek (dopočítáno) ---
+  result          String?  // "WIN" | "LOSS" | "BE"
+  durationMinutes Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  screenshots Screenshot[]
+  tags        TradeTag[]
+  confluences TradeConfluence[]
+
+  @@index([accountId, date])
+  @@index([accountId, instrument])
+  @@index([accountId, session])
+  @@index([accountId, strategyId])
+  @@index([accountId, result])
+}
