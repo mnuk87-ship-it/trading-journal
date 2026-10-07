@@ -17,6 +17,19 @@ export function buildTradeQuery(accountId: string, filters: TradeFilters = {}): 
   filters.timeframe?.forEach((v) => params.append("timeframe", v));
   if (filters.isAPlus !== undefined) params.set("isAPlus", String(filters.isAPlus));
   if (filters.search) params.set("search", filters.search);
+
+  // --- RSI filtry ---
+  if (filters.rsi15mCrossed !== undefined) params.set("rsi15mCrossed", String(filters.rsi15mCrossed));
+  if (filters.rsi5mCrossed !== undefined) params.set("rsi5mCrossed", String(filters.rsi5mCrossed));
+  filters.rsi15mDirection?.forEach((v) => params.append("rsi15mDirection", v));
+  filters.rsi5mDirection?.forEach((v) => params.append("rsi5mDirection", v));
+  filters.rsi15mZone?.forEach((v) => params.append("rsi15mZone", v));
+  filters.rsi5mZone?.forEach((v) => params.append("rsi5mZone", v));
+  if (filters.rsi15mValueMin !== undefined) params.set("rsi15mValueMin", String(filters.rsi15mValueMin));
+  if (filters.rsi15mValueMax !== undefined) params.set("rsi15mValueMax", String(filters.rsi15mValueMax));
+  if (filters.rsi5mValueMin !== undefined) params.set("rsi5mValueMin", String(filters.rsi5mValueMin));
+  if (filters.rsi5mValueMax !== undefined) params.set("rsi5mValueMax", String(filters.rsi5mValueMax));
+  filters.rsiCombo?.forEach((v) => params.append("rsiCombo", v));
   return params.toString();
 }
 

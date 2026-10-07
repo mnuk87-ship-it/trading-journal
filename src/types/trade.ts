@@ -1,6 +1,8 @@
 // Centrální doménové typy pro Trading Journal.
 // Architektura je připravena na i18n - labely jsou oddělené od hodnot (kódy).
 
+import type { RsiDirection, RsiZone } from "@/lib/rsi";
+
 export type Direction = "LONG" | "SHORT";
 
 export type Session = "Asia" | "London" | "New York" | "Other";
@@ -131,6 +133,23 @@ export interface TradeDTO {
   result: TradeResult | null;
   durationMinutes: number | null;
 
+  // --- RSI Cross konfluence (detailní, číselná data) ---
+  // Čistě analytický atribut - nikdy neovlivňuje risk/Position Size/PnL/R:R.
+  // `rsi*Zone` je vždy server-computed z `rsi*Value` (src/lib/rsi.ts).
+  rsi15mCrossed: boolean;
+  rsi15mDirection: RsiDirection | null;
+  rsi15mValue: number | null;
+  rsi15mZone: RsiZone | null;
+  rsi15mCrossTime: string | null;
+  rsi15mCandlesToEntry: number | null;
+
+  rsi5mCrossed: boolean;
+  rsi5mDirection: RsiDirection | null;
+  rsi5mValue: number | null;
+  rsi5mZone: RsiZone | null;
+  rsi5mCrossTime: string | null;
+  rsi5mCandlesToEntry: number | null;
+
   screenshots: ScreenshotDTO[];
   tags: TagDTO[];
   /** Klíče konfluencí (FVG, BPR, OB, RSI_15M, RSI_5M, RSI_1H, HVN, POC), které platily pro tento obchod.
@@ -153,4 +172,18 @@ export interface TradeFilters {
   timeframe?: Timeframe[];
   isAPlus?: boolean;
   search?: string;
+
+  // --- RSI filtry ---
+  rsi15mCrossed?: boolean;
+  rsi5mCrossed?: boolean;
+  rsi15mDirection?: RsiDirection[];
+  rsi5mDirection?: RsiDirection[];
+  rsi15mZone?: RsiZone[];
+  rsi5mZone?: RsiZone[];
+  rsi15mValueMin?: number;
+  rsi15mValueMax?: number;
+  rsi5mValueMin?: number;
+  rsi5mValueMax?: number;
+  /** "15M" (jen 15M cross), "15M+5M" (oba), "5M" (jen 5M cross) */
+  rsiCombo?: ("15M" | "15M+5M" | "5M")[];
 }

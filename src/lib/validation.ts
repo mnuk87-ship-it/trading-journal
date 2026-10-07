@@ -1,5 +1,39 @@
 import { z } from "zod";
 
+// Přijme libovolnou hodnotu, ale prázdný string/null/undefined převede na
+// undefined (= "nezadáno"), místo aby ho zod/Number() tiše zkonvertoval na 0.
+// Tím se zamezí bugu, kdy vymazání čísla ve formuláři nechtěně uloží balance = 0.
+function optionalFiniteNumber(label: string) {
+  return z.preprocess(
+    (val) => (val === "" || val === null || val === undefined ? undefined : val),
+    z.number({ error: `${label} musí být platné číslo` }).finite(`${label} musí být platné číslo`).optional(),
+  );
+}
+
+export const accountUpdateSchema = z.object({
+  name: z.string().trim().min(1, "Název účtu je povinný").optional(),
+  currency: z.string().trim().min(1, "Měna je povinná").optional(),
+  startingBalance: optionalFiniteNumber("Počáteční balance"),
+  defaultRiskPct: optionalFiniteNumber("Výchozí risk %"),
+  defaultInstrument: z.string().trim().min(1, "Výchozí instrument je povinný").optional(),
+  defaultSession: z.enum(["Asia", "London", "New York", "Other"]).optional(),
+  commissionPerSide: optionalFiniteNumber("Komise / strana"),
+  timezone: z.string().trim().min(1, "Timezone je povinná").optional(),
+  breakevenThreshold: optionalFiniteNumber("Breakeven threshold"),
+});
+
+export const accountCreateSchema = z.object({
+  name: z.string().trim().min(1, "Název účtu je povinný").optional().default("Nový účet"),
+  currency: z.string().trim().min(1, "Měna je povinná").optional().default("USD"),
+  startingBalance: optionalFiniteNumber("Počáteční balance"),
+  defaultRiskPct: optionalFiniteNumber("Výchozí risk %"),
+  defaultInstrument: z.string().trim().min(1).optional().default("NQ"),
+  defaultSession: z.enum(["Asia", "London", "New York", "Other"]).optional().default("New York"),
+  commissionPerSide: optionalFiniteNumber("Komise / strana"),
+  timezone: z.string().trim().min(1).optional().default("Europe/Prague"),
+  breakevenThreshold: optionalFiniteNumber("Breakeven threshold"),
+});
+
 export const tradeSchema = z.object({
   accountId: z.string().min(1),
   instrument: z.string().min(1, "Instrument je povinný"),
@@ -52,6 +86,21 @@ export const tradeSchema = z.object({
   notesGood: z.string().nullable().optional(),
   notesBad: z.string().nullable().optional(),
   notesNext: z.string().nullable().optional(),
+
+  // --- RSI Cross konfluence (detailní, číselná data) ---
+  // `rsi*Zone` se NIKDY nepřijímá od klienta - dopočítává se server-side
+  // v API route z `rsi*Value` přes calcRsiZone() (src/lib/rsi.ts).
+  rsi15mCrossed: z.boolean().optional().default(false),
+  rsi15mDirection: z.enum(["Bullish", "Bearish"]).nullable().optional(),
+  rsi15mValue: z.number().min(0, "RSI musí být 0-100").max(100, "RSI musí být 0-100").nullable().optional(),
+  rsi15mCrossTime: z.string().nullable().optional(),
+  rsi15mCandlesToEntry: z.number().int().min(0).nullable().optional(),
+
+  rsi5mCrossed: z.boolean().optional().default(false),
+  rsi5mDirection: z.enum(["Bullish", "Bearish"]).nullable().optional(),
+  rsi5mValue: z.number().min(0, "RSI musí být 0-100").max(100, "RSI musí být 0-100").nullable().optional(),
+  rsi5mCrossTime: z.string().nullable().optional(),
+  rsi5mCandlesToEntry: z.number().int().min(0).nullable().optional(),
 
   tags: z.array(z.string()).optional().default([]),
   // Analytický atribut obchodu - validace membership proti fixnímu seznamu

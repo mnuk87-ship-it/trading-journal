@@ -12,7 +12,12 @@ export interface AnalyticsResponse {
   tradeCount: number;
 }
 
-export function useAnalytics(accountId: string | null, filters: TradeFilters = {}, minConfluenceSample = 20) {
+export function useAnalytics(
+  accountId: string | null,
+  filters: TradeFilters = {},
+  minConfluenceSample = 20,
+  minRsiSample = 10
+) {
   const [data, setData] = useState<AnalyticsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +28,7 @@ export function useAnalytics(accountId: string | null, filters: TradeFilters = {
     setLoading(true);
     setError(null);
     const qs = buildTradeQuery(accountId, filters);
-    fetch(`/api/analytics?${qs}&minConfluenceSample=${minConfluenceSample}`)
+    fetch(`/api/analytics?${qs}&minConfluenceSample=${minConfluenceSample}&minRsiSample=${minRsiSample}`)
       .then((res) => {
         if (!res.ok) throw new Error("Nepodařilo se načíst analytiku");
         return res.json();
@@ -32,7 +37,7 @@ export function useAnalytics(accountId: string | null, filters: TradeFilters = {
       .catch((e) => setError(e instanceof Error ? e.message : "Chyba"))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accountId, key, minConfluenceSample]);
+  }, [accountId, key, minConfluenceSample, minRsiSample]);
 
   useEffect(() => {
     load();

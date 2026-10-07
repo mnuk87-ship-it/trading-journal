@@ -198,6 +198,25 @@ model Trade {
   result          String?  // "WIN" | "LOSS" | "BE"
   durationMinutes Int?
 
+  // --- RSI Cross konfluence (detailní, číselná data pro statistickou analýzu) ---
+  // Čistě analytický atribut obchodu - NESMÍ nikdy ovlivnit výpočet risku,
+  // Position Size, PnL ani R:R. 15M je primární potvrzení, 5M sekundární
+  // (timing vstupu). `rsi*Zone` se vždy dopočítává serverem z `rsi*Value`
+  // (src/lib/rsi.ts), nikdy se nepřijímá přímo od klienta.
+  rsi15mCrossed        Boolean @default(false)
+  rsi15mDirection      String? // "Bullish" | "Bearish"
+  rsi15mValue          Float?  // RSI hodnota v momentě crossu, 0-100
+  rsi15mZone           String? // dopočítaná zóna, např. "50-55"
+  rsi15mCrossTime      String? // "HH:mm"
+  rsi15mCandlesToEntry Int?    // počet 15M svíček mezi crossem a vstupem
+
+  rsi5mCrossed        Boolean @default(false)
+  rsi5mDirection      String? // "Bullish" | "Bearish"
+  rsi5mValue          Float?
+  rsi5mZone           String?
+  rsi5mCrossTime      String?
+  rsi5mCandlesToEntry Int?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -210,4 +229,6 @@ model Trade {
   @@index([accountId, session])
   @@index([accountId, strategyId])
   @@index([accountId, result])
+  @@index([accountId, rsi15mCrossed])
+  @@index([accountId, rsi5mCrossed])
 }

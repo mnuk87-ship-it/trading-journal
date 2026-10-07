@@ -80,6 +80,20 @@ export function toTradeDTO(trade: TradeWithRelations): TradeDTO {
     result: trade.result as TradeDTO["result"],
     durationMinutes: trade.durationMinutes,
 
+    rsi15mCrossed: trade.rsi15mCrossed,
+    rsi15mDirection: trade.rsi15mDirection as TradeDTO["rsi15mDirection"],
+    rsi15mValue: trade.rsi15mValue,
+    rsi15mZone: trade.rsi15mZone as TradeDTO["rsi15mZone"],
+    rsi15mCrossTime: trade.rsi15mCrossTime,
+    rsi15mCandlesToEntry: trade.rsi15mCandlesToEntry,
+
+    rsi5mCrossed: trade.rsi5mCrossed,
+    rsi5mDirection: trade.rsi5mDirection as TradeDTO["rsi5mDirection"],
+    rsi5mValue: trade.rsi5mValue,
+    rsi5mZone: trade.rsi5mZone as TradeDTO["rsi5mZone"],
+    rsi5mCrossTime: trade.rsi5mCrossTime,
+    rsi5mCandlesToEntry: trade.rsi5mCandlesToEntry,
+
     screenshots: trade.screenshots.map((s) => ({ id: s.id, type: s.type as "BEFORE" | "AFTER", url: s.url })),
     tags: trade.tags.map((t) => ({ id: t.tag.id, name: t.tag.name })),
     confluences: trade.confluences.map((c) => c.confluenceKey),

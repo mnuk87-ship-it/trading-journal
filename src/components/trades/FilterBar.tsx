@@ -5,6 +5,9 @@ import type { TradeFilters } from "@/types/trade";
 import { dictionary } from "@/lib/i18n";
 import { useInstruments, useStrategies } from "@/hooks/useStrategies";
 import { useAccount } from "@/contexts/AccountContext";
+import { RSI_ZONES, RSI_DIRECTIONS, rsiZoneLabel } from "@/lib/rsi";
+
+const RSI_COMBOS = ["15M", "15M+5M", "5M"] as const;
 
 export function FilterBar({
   filters,
@@ -19,17 +22,31 @@ export function FilterBar({
   const { instruments } = useInstruments(accountId);
   const { strategies } = useStrategies(accountId);
 
-  function toggleMulti<K extends "instrument" | "direction" | "session" | "timeframe" | "strategyId" | "result">(
-    key: K,
-    value: string
-  ) {
+  type MultiKey =
+    | "instrument"
+    | "direction"
+    | "session"
+    | "timeframe"
+    | "strategyId"
+    | "result"
+    | "rsi15mDirection"
+    | "rsi5mDirection"
+    | "rsi15mZone"
+    | "rsi5mZone"
+    | "rsiCombo";
+
+  function toggleMulti<K extends MultiKey>(key: K, value: string) {
     const current = (filters[key] as string[] | undefined) ?? [];
     const next = current.includes(value) ? current.filter((v) => v !== value) : [...current, value];
     onChange({ ...filters, [key]: next.length ? next : undefined });
   }
 
-  const active = (key: "instrument" | "direction" | "session" | "timeframe" | "strategyId" | "result", value: string) =>
-    ((filters[key] as string[] | undefined) ?? []).includes(value);
+  const active = (key: MultiKey, value: string) => ((filters[key] as string[] | undefined) ?? []).includes(value);
+
+  // Tri-stavový toggle pro boolean filtry (undefined = "vše", true/false = aktivní volba).
+  function toggleTriBool(key: "rsi15mCrossed" | "rsi5mCrossed", value: boolean) {
+    onChange({ ...filters, [key]: filters[key] === value ? undefined : value });
+  }
 
   return (
     <div className="bg-card border border-card-border rounded-2xl p-4 space-y-3">
@@ -97,6 +114,78 @@ export function FilterBar({
             <Chip key={s.id} label={s.name} active={active("strategyId", s.id)} onClick={() => toggleMulti("strategyId", s.id)} />
           ))}
         </FilterGroup>
+      </div>
+
+      <div className="flex flex-wrap gap-4 text-xs border-t border-card-border pt-3">
+        <FilterGroup label="RSI 15M Cross">
+          <Chip label="Ano" active={filters.rsi15mCrossed === true} onClick={() => toggleTriBool("rsi15mCrossed", true)} />
+          <Chip label="Ne" active={filters.rsi15mCrossed === false} onClick={() => toggleTriBool("rsi15mCrossed", false)} />
+        </FilterGroup>
+        <FilterGroup label="RSI 5M Cross">
+          <Chip label="Ano" active={filters.rsi5mCrossed === true} onClick={() => toggleTriBool("rsi5mCrossed", true)} />
+          <Chip label="Ne" active={filters.rsi5mCrossed === false} onClick={() => toggleTriBool("rsi5mCrossed", false)} />
+        </FilterGroup>
+        <FilterGroup label="RSI Kombinace">
+          {RSI_COMBOS.map((c) => (
+            <Chip key={c} label={c} active={active("rsiCombo", c)} onClick={() => toggleMulti("rsiCombo", c)} />
+          ))}
+        </FilterGroup>
+        <FilterGroup label="15M Směr">
+          {RSI_DIRECTIONS.map((d) => (
+            <Chip key={d} label={d} active={active("rsi15mDirection", d)} onClick={() => toggleMulti("rsi15mDirection", d)} />
+          ))}
+        </FilterGroup>
+        <FilterGroup label="5M Směr">
+          {RSI_DIRECTIONS.map((d) => (
+            <Chip key={d} label={d} active={active("rsi5mDirection", d)} onClick={() => toggleMulti("rsi5mDirection", d)} />
+          ))}
+        </FilterGroup>
+        <FilterGroup label="15M Zóna">
+          {RSI_ZONES.map((z) => (
+            <Chip key={z} label={rsiZoneLabel(z)} active={active("rsi15mZone", z)} onClick={() => toggleMulti("rsi15mZone", z)} />
+          ))}
+        </FilterGroup>
+        <FilterGroup label="5M Zóna">
+          {RSI_ZONES.map((z) => (
+            <Chip key={z} label={rsiZoneLabel(z)} active={active("rsi5mZone", z)} onClick={() => toggleMulti("rsi5mZone", z)} />
+          ))}
+        </FilterGroup>
+        <div className="flex items-center gap-2">
+          <span className="text-muted-2">15M RSI</span>
+          <input
+            type="number"
+            placeholder="min"
+            className="w-16 text-xs"
+            value={filters.rsi15mValueMin ?? ""}
+            onChange={(e) => onChange({ ...filters, rsi15mValueMin: e.target.value === "" ? undefined : Number(e.target.value) })}
+          />
+          <span className="text-muted-2">–</span>
+          <input
+            type="number"
+            placeholder="max"
+            className="w-16 text-xs"
+            value={filters.rsi15mValueMax ?? ""}
+            onChange={(e) => onChange({ ...filters, rsi15mValueMax: e.target.value === "" ? undefined : Number(e.target.value) })}
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-muted-2">5M RSI</span>
+          <input
+            type="number"
+            placeholder="min"
+            className="w-16 text-xs"
+            value={filters.rsi5mValueMin ?? ""}
+            onChange={(e) => onChange({ ...filters, rsi5mValueMin: e.target.value === "" ? undefined : Number(e.target.value) })}
+          />
+          <span className="text-muted-2">–</span>
+          <input
+            type="number"
+            placeholder="max"
+            className="w-16 text-xs"
+            value={filters.rsi5mValueMax ?? ""}
+            onChange={(e) => onChange({ ...filters, rsi5mValueMax: e.target.value === "" ? undefined : Number(e.target.value) })}
+          />
+        </div>
       </div>
     </div>
   );

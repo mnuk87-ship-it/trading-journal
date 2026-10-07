@@ -14,6 +14,7 @@ import { deleteTrade } from "@/hooks/useTrades";
 import { dictionary } from "@/lib/i18n";
 import { getContractSpec } from "@/lib/contractSpecs";
 import { confluenceLabel } from "@/lib/confluences";
+import { rsiZoneLabel } from "@/lib/rsi";
 
 export default function TradeDetailPage() {
   const params = useParams<{ id: string }>();
@@ -141,6 +142,52 @@ export default function TradeDetailPage() {
             </div>
           )}
         </Card>
+
+        {(trade.rsi15mCrossed || trade.rsi5mCrossed) && (
+          <Card title="RSI Konfluence">
+            <div className="space-y-3">
+              <div className="border border-accent/40 rounded-xl p-3 bg-accent-soft/20">
+                <div className="text-accent text-xs font-semibold mb-2">Primární RSI potvrzení — 15M</div>
+                {trade.rsi15mCrossed ? (
+                  <dl className="grid grid-cols-2 gap-y-2 text-sm">
+                    <Field label="Cross" value="Ano" raw />
+                    <Field label="Směr" value={trade.rsi15mDirection ?? "—"} raw />
+                    <Field label="RSI hodnota" value={trade.rsi15mValue ?? "—"} raw />
+                    <Field label="Zóna" value={rsiZoneLabel(trade.rsi15mZone)} raw />
+                    <Field label="Čas crossu" value={trade.rsi15mCrossTime ?? "—"} raw />
+                    <Field
+                      label="Cross → Entry"
+                      value={trade.rsi15mCandlesToEntry !== null ? `${trade.rsi15mCandlesToEntry} svíček` : "—"}
+                      raw
+                    />
+                  </dl>
+                ) : (
+                  <div className="text-xs text-muted-2">Cross nenastal.</div>
+                )}
+              </div>
+
+              <div className="border border-card-border rounded-xl p-3 bg-surface-2">
+                <div className="text-muted text-xs font-semibold mb-2">Sekundární RSI potvrzení — 5M</div>
+                {trade.rsi5mCrossed ? (
+                  <dl className="grid grid-cols-2 gap-y-2 text-sm">
+                    <Field label="Cross" value="Ano" raw />
+                    <Field label="Směr" value={trade.rsi5mDirection ?? "—"} raw />
+                    <Field label="RSI hodnota" value={trade.rsi5mValue ?? "—"} raw />
+                    <Field label="Zóna" value={rsiZoneLabel(trade.rsi5mZone)} raw />
+                    <Field label="Čas crossu" value={trade.rsi5mCrossTime ?? "—"} raw />
+                    <Field
+                      label="Cross → Entry"
+                      value={trade.rsi5mCandlesToEntry !== null ? `${trade.rsi5mCandlesToEntry} svíček` : "—"}
+                      raw
+                    />
+                  </dl>
+                ) : (
+                  <div className="text-xs text-muted-2">Cross nenastal.</div>
+                )}
+              </div>
+            </div>
+          </Card>
+        )}
 
         <Card title="Trade management">
           <dl className="grid grid-cols-2 gap-y-2 text-sm">

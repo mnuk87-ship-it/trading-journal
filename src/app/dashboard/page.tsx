@@ -17,6 +17,14 @@ export default function DashboardPage() {
   const { analytics } = data;
   const currency = data.account.currency;
 
+  // "Best 15M RSI Zone" - zóna s nejvyšším win rate mezi zónami, které mají
+  // dostatečný vzorek (minSampleSize). Pokud žádná zóna nemá dost dat,
+  // nevyvozujeme závěr - zobrazí se "Insufficient data" (viz požadavek #10).
+  const eligibleZones = analytics.rsi.timeframe15m.zones.filter((z) => !z.insufficientData && z.trades > 0);
+  const bestRsiZone = eligibleZones.length
+    ? eligibleZones.reduce((best, z) => (z.winRate > best.winRate ? z : best), eligibleZones[0])
+    : null;
+
   return (
     <div className="space-y-6">
       <div>
@@ -85,6 +93,41 @@ export default function DashboardPage() {
           <KpiCard label="Max Loss Streak" value={String(analytics.streaks.maxLossStreak)} />
           <KpiCard label="Trades / Day" value={formatNumber(analytics.frequency.perDay)} />
           <KpiCard label="Trades / Week" value={formatNumber(analytics.frequency.perWeek)} />
+        </KpiGrid>
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-xs uppercase tracking-wide text-muted font-semibold">RSI Performance</h2>
+        <KpiGrid>
+          <KpiCard
+            label="15M RSI Cross - Win Rate"
+            value={
+              analytics.rsi.timeframe15m.overall.insufficientData
+                ? "Insufficient data"
+                : formatPercent(analytics.rsi.timeframe15m.overall.winRate)
+            }
+            variant="green"
+          />
+          <KpiCard
+            label="15M + 5M RSI Cross - Win Rate"
+            value={
+              analytics.rsi.combos.find((c) => c.combo === "15M+5M")?.insufficientData
+                ? "Insufficient data"
+                : formatPercent(analytics.rsi.combos.find((c) => c.combo === "15M+5M")?.winRate ?? 0)
+            }
+          />
+          <KpiCard
+            label="5M Only RSI Cross - Win Rate"
+            value={
+              analytics.rsi.combos.find((c) => c.combo === "5M")?.insufficientData
+                ? "Insufficient data"
+                : formatPercent(analytics.rsi.combos.find((c) => c.combo === "5M")?.winRate ?? 0)
+            }
+          />
+          <KpiCard
+            label="Nejlepší 15M RSI zóna"
+            value={bestRsiZone ? `${bestRsiZone.zoneLabel} (${formatPercent(bestRsiZone.winRate)})` : "Insufficient data"}
+          />
         </KpiGrid>
       </section>
 

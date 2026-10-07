@@ -18,7 +18,12 @@ import {
 import { computeTrade, calcRecommendedPositionSize, calcRiskPercent } from "@/lib/calculations";
 import { getContractSpec } from "@/lib/contractSpecs";
 import { CONFLUENCE_DEFS } from "@/lib/confluences";
+import { RSI_DIRECTIONS } from "@/lib/rsi";
 import { dictionary } from "@/lib/i18n";
+
+// RSI_15M/RSI_5M mají vlastní dedikovanou sekci (viz níže) - v obecné
+// konfluenční mřížce se tedy nezobrazují, aby nedocházelo k duplicitě.
+const GENERIC_CONFLUENCE_DEFS = CONFLUENCE_DEFS.filter((c) => c.key !== "RSI_15M" && c.key !== "RSI_5M");
 
 type Tab = "basic" | "params" | "setup" | "management" | "psychology" | "screenshots";
 
@@ -66,6 +71,19 @@ interface FormState {
   notesNext: string;
   tags: string;
   confluences: string[];
+
+  // --- RSI Cross (15M = primární, 5M = sekundární potvrzení) ---
+  rsi15mCrossed: boolean;
+  rsi15mDirection: string;
+  rsi15mValue: string;
+  rsi15mCrossTime: string;
+  rsi15mCandlesToEntry: string;
+  rsi5mCrossed: boolean;
+  rsi5mDirection: string;
+  rsi5mValue: string;
+  rsi5mCrossTime: string;
+  rsi5mCandlesToEntry: string;
+
   beforeScreenshot: string | null;
   afterScreenshot: string | null;
 }
@@ -117,6 +135,18 @@ function emptyForm(defaults: { instrument: string; session: string; riskPct: num
     notesNext: "",
     tags: "",
     confluences: [],
+
+    rsi15mCrossed: false,
+    rsi15mDirection: "",
+    rsi15mValue: "",
+    rsi15mCrossTime: "",
+    rsi15mCandlesToEntry: "",
+    rsi5mCrossed: false,
+    rsi5mDirection: "",
+    rsi5mValue: "",
+    rsi5mCrossTime: "",
+    rsi5mCandlesToEntry: "",
+
     beforeScreenshot: null,
     afterScreenshot: null,
   };
@@ -191,6 +221,18 @@ export function TradeFormModal() {
         notesNext: editingTrade.notesNext ?? "",
         tags: editingTrade.tags.map((t) => t.name).join(", "),
         confluences: [...editingTrade.confluences],
+
+        rsi15mCrossed: editingTrade.rsi15mCrossed,
+        rsi15mDirection: editingTrade.rsi15mDirection ?? "",
+        rsi15mValue: editingTrade.rsi15mValue !== null ? String(editingTrade.rsi15mValue) : "",
+        rsi15mCrossTime: editingTrade.rsi15mCrossTime ?? "",
+        rsi15mCandlesToEntry: editingTrade.rsi15mCandlesToEntry !== null ? String(editingTrade.rsi15mCandlesToEntry) : "",
+        rsi5mCrossed: editingTrade.rsi5mCrossed,
+        rsi5mDirection: editingTrade.rsi5mDirection ?? "",
+        rsi5mValue: editingTrade.rsi5mValue !== null ? String(editingTrade.rsi5mValue) : "",
+        rsi5mCrossTime: editingTrade.rsi5mCrossTime ?? "",
+        rsi5mCandlesToEntry: editingTrade.rsi5mCandlesToEntry !== null ? String(editingTrade.rsi5mCandlesToEntry) : "",
+
         beforeScreenshot: editingTrade.screenshots.find((s) => s.type === "BEFORE")?.url ?? null,
         afterScreenshot: editingTrade.screenshots.find((s) => s.type === "AFTER")?.url ?? null,
       });
@@ -304,6 +346,18 @@ export function TradeFormModal() {
           .map((t) => t.trim())
           .filter(Boolean),
         confluences: form.confluences,
+
+        rsi15mCrossed: form.rsi15mCrossed,
+        rsi15mDirection: form.rsi15mCrossed ? form.rsi15mDirection || null : null,
+        rsi15mValue: form.rsi15mCrossed ? num(form.rsi15mValue) : null,
+        rsi15mCrossTime: form.rsi15mCrossed ? form.rsi15mCrossTime || null : null,
+        rsi15mCandlesToEntry: form.rsi15mCrossed && form.rsi15mCandlesToEntry ? parseInt(form.rsi15mCandlesToEntry, 10) : null,
+        rsi5mCrossed: form.rsi5mCrossed,
+        rsi5mDirection: form.rsi5mCrossed ? form.rsi5mDirection || null : null,
+        rsi5mValue: form.rsi5mCrossed ? num(form.rsi5mValue) : null,
+        rsi5mCrossTime: form.rsi5mCrossed ? form.rsi5mCrossTime || null : null,
+        rsi5mCandlesToEntry: form.rsi5mCrossed && form.rsi5mCandlesToEntry ? parseInt(form.rsi5mCandlesToEntry, 10) : null,
+
         screenshots: [
           ...(form.beforeScreenshot ? [{ type: "BEFORE", url: form.beforeScreenshot }] : []),
           ...(form.afterScreenshot ? [{ type: "AFTER", url: form.afterScreenshot }] : []),
@@ -671,7 +725,7 @@ export function TradeFormModal() {
               <div className="col-span-2">
                 <label>Konfluence</label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                  {CONFLUENCE_DEFS.map((c) => {
+                  {GENERIC_CONFLUENCE_DEFS.map((c) => {
                     const checked = form.confluences.includes(c.key);
                     return (
                       <label
@@ -689,6 +743,119 @@ export function TradeFormModal() {
                 <div className="text-xs text-muted-2 mt-1">
                   Čistě analytický atribut - neovlivňuje risk, Position Size, PnL ani R:R.
                 </div>
+              </div>
+
+              {/* RSI Cross konfluence - detailní data pro statistickou analýzu.
+                  15M = primární potvrzení, 5M = sekundární (přesnější timing).
+                  Čistě analytický atribut - neovlivňuje risk/Position Size/PnL/R:R. */}
+              <div className="col-span-2 border border-accent/40 rounded-xl p-3 bg-accent-soft/20 space-y-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="rsi15mCrossed"
+                    checked={form.rsi15mCrossed}
+                    onChange={(e) => set("rsi15mCrossed", e.target.checked)}
+                  />
+                  <label htmlFor="rsi15mCrossed" className="!mb-0 font-semibold text-accent text-xs">
+                    RSI Cross 15M — Primární RSI potvrzení
+                  </label>
+                </div>
+                {form.rsi15mCrossed && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pl-1">
+                    <div>
+                      <label className="text-xs">Směr</label>
+                      <select value={form.rsi15mDirection} onChange={(e) => set("rsi15mDirection", e.target.value)}>
+                        <option value="">—</option>
+                        {RSI_DIRECTIONS.map((d) => (
+                          <option key={d} value={d}>
+                            {d}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs">RSI hodnota (0-100)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min={0}
+                        max={100}
+                        placeholder="např. 52.4"
+                        value={form.rsi15mValue}
+                        onChange={(e) => set("rsi15mValue", e.target.value)}
+                      />
+                      {errors.rsi15mValue && <span className="text-xs text-red">{errors.rsi15mValue[0]}</span>}
+                    </div>
+                    <div>
+                      <label className="text-xs">Čas crossu</label>
+                      <input type="time" value={form.rsi15mCrossTime} onChange={(e) => set("rsi15mCrossTime", e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="text-xs">Svíček cross → entry</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={form.rsi15mCandlesToEntry}
+                        onChange={(e) => set("rsi15mCandlesToEntry", e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="col-span-2 border border-card-border rounded-xl p-3 bg-surface-2 space-y-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="rsi5mCrossed"
+                    checked={form.rsi5mCrossed}
+                    onChange={(e) => set("rsi5mCrossed", e.target.checked)}
+                  />
+                  <label htmlFor="rsi5mCrossed" className="!mb-0 font-semibold text-muted text-xs">
+                    RSI Cross 5M — Sekundární RSI potvrzení (timing)
+                  </label>
+                </div>
+                {form.rsi5mCrossed && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pl-1">
+                    <div>
+                      <label className="text-xs">Směr</label>
+                      <select value={form.rsi5mDirection} onChange={(e) => set("rsi5mDirection", e.target.value)}>
+                        <option value="">—</option>
+                        {RSI_DIRECTIONS.map((d) => (
+                          <option key={d} value={d}>
+                            {d}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs">RSI hodnota (0-100)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min={0}
+                        max={100}
+                        placeholder="např. 48.9"
+                        value={form.rsi5mValue}
+                        onChange={(e) => set("rsi5mValue", e.target.value)}
+                      />
+                      {errors.rsi5mValue && <span className="text-xs text-red">{errors.rsi5mValue[0]}</span>}
+                    </div>
+                    <div>
+                      <label className="text-xs">Čas crossu</label>
+                      <input type="time" value={form.rsi5mCrossTime} onChange={(e) => set("rsi5mCrossTime", e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="text-xs">Svíček cross → entry</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={form.rsi5mCandlesToEntry}
+                        onChange={(e) => set("rsi5mCandlesToEntry", e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

@@ -13,7 +13,9 @@ export async function GET(req: Request) {
   const trades = await fetchTradesForAccount(accountId, searchParams);
   const minSampleParam = searchParams.get("minConfluenceSample");
   const minConfluenceSampleSize = minSampleParam ? Math.max(1, parseInt(minSampleParam, 10) || 20) : 20;
-  const analytics = getFullAnalytics(trades, account.startingBalance, minConfluenceSampleSize);
+  const minRsiSampleParam = searchParams.get("minRsiSample");
+  const minRsiSampleSize = minRsiSampleParam ? Math.max(1, parseInt(minRsiSampleParam, 10) || 10) : 10;
+  const analytics = getFullAnalytics(trades, account.startingBalance, minConfluenceSampleSize, minRsiSampleSize);
 
   return NextResponse.json({
     analytics,

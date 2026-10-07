@@ -5,6 +5,7 @@ import { tradeSchema } from "@/lib/validation";
 import { computeTrade, calcRiskPercent } from "@/lib/calculations";
 import { ensureDefaultConfluences } from "@/lib/account";
 import { sanitizeConfluenceKeys } from "@/lib/confluences";
+import { sanitizeRsiCross } from "@/lib/rsi";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -57,7 +58,26 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
   await prisma.tradeTag.deleteMany({ where: { tradeId: id } });
 
+  // RSI Cross konfluence - server-side sanitizace + dopočet zóny (nikdy od klienta).
+  const rsi15m = sanitizeRsiCross({
+    crossed: data.rsi15mCrossed,
+    direction: data.rsi15mDirection,
+    value: data.rsi15mValue,
+    crossTime: data.rsi15mCrossTime,
+    candlesToEntry: data.rsi15mCandlesToEntry,
+  });
+  const rsi5m = sanitizeRsiCross({
+    crossed: data.rsi5mCrossed,
+    direction: data.rsi5mDirection,
+    value: data.rsi5mValue,
+    crossTime: data.rsi5mCrossTime,
+    candlesToEntry: data.rsi5mCandlesToEntry,
+  });
+
+  // Auto-sync RSI_15M/RSI_5M do obecného seznamu konfluencí (viz POST route).
   const confluenceKeys = sanitizeConfluenceKeys(data.confluences);
+  if (rsi15m.crossed && !confluenceKeys.includes("RSI_15M")) confluenceKeys.push("RSI_15M");
+  if (rsi5m.crossed && !confluenceKeys.includes("RSI_5M")) confluenceKeys.push("RSI_5M");
   if (confluenceKeys.length) await ensureDefaultConfluences();
   await prisma.tradeConfluence.deleteMany({ where: { tradeId: id } });
 
@@ -120,6 +140,21 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       notesNext: data.notesNext ?? null,
       result: calc.result,
       durationMinutes: calc.durationMinutes,
+
+      rsi15mCrossed: rsi15m.crossed,
+      rsi15mDirection: rsi15m.direction,
+      rsi15mValue: rsi15m.value,
+      rsi15mZone: rsi15m.zone,
+      rsi15mCrossTime: rsi15m.crossTime,
+      rsi15mCandlesToEntry: rsi15m.candlesToEntry,
+
+      rsi5mCrossed: rsi5m.crossed,
+      rsi5mDirection: rsi5m.direction,
+      rsi5mValue: rsi5m.value,
+      rsi5mZone: rsi5m.zone,
+      rsi5mCrossTime: rsi5m.crossTime,
+      rsi5mCandlesToEntry: rsi5m.candlesToEntry,
+
       tags: { create: tagRecords.map((t) => ({ tagId: t.id })) },
       confluences: { create: confluenceKeys.map((key) => ({ confluenceKey: key })) },
       ...(screenshots

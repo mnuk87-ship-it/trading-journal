@@ -5,6 +5,7 @@
 
 import type { TradeDTO, TradeFilters, TradeResult } from "@/types/trade";
 import { CONFLUENCE_DEFS, CONFLUENCE_KEYS, confluenceLabel, generateCombinations } from "@/lib/confluences";
+import { RSI_ZONES, rsiZoneLabel, type RsiZone } from "@/lib/rsi";
 
 export function filterTrades(trades: TradeDTO[], filters: TradeFilters = {}): TradeDTO[] {
   return trades.filter((t) => {
@@ -620,8 +621,161 @@ export function getConfluenceComboStats(trades: TradeDTO[], minSampleSize = 20):
   return result.sort((a, b) => b.expectancy - a.expectancy);
 }
 
+// --- RSI Cross konfluence (detailní, číselná data) --------------------
+// Stejná filozofie jako obecné konfluence výše: čistě analytický atribut,
+// čte už hotová pole (netPnl, realizedRR, result, rsi*Value/Zone/Crossed)
+// z TradeDTO. Starší obchody bez RSI dat mají rsi*Crossed=false a
+// rsi*Value=null, takže je automaticky vynechají (žádný crash, žádné 0 jako
+// fakt hodnotu RSI).
+
+export interface RsiTimeframeStats {
+  trades: number;
+  wins: number;
+  losses: number;
+  be: number;
+  winRate: number;
+  pnl: number;
+  averageRR: number;
+  totalR: number;
+  expectancy: number;
+  profitFactor: number;
+  /** true pokud je vzorek menší než minSampleSize - UI by mělo zobrazit "Insufficient data" místo závěrů. */
+  insufficientData: boolean;
+}
+
+function buildRsiTimeframeStats(group: TradeDTO[], minSampleSize: number): RsiTimeframeStats {
+  const c = closed(group);
+  const rr = c.map((t) => t.realizedRR ?? 0);
+  return {
+    trades: group.length,
+    wins: wins(group).length,
+    losses: losses(group).length,
+    be: bes(group).length,
+    winRate: getWinRate(group),
+    pnl: getTotalPnl(group),
+    averageRR: avg(rr),
+    totalR: sum(rr),
+    expectancy: getExpectancy(group).dollar,
+    profitFactor: getProfitFactor(group),
+    insufficientData: group.length < minSampleSize,
+  };
+}
+
+export interface RsiZoneRow extends RsiTimeframeStats {
+  zone: RsiZone;
+  zoneLabel: string;
+}
+
+function getRsiZoneBreakdown(trades: TradeDTO[], timeframe: "15m" | "5m", minSampleSize: number): RsiZoneRow[] {
+  const zoneOf = (t: TradeDTO) => (timeframe === "15m" ? t.rsi15mZone : t.rsi5mZone);
+  return RSI_ZONES.map((zone) => ({
+    zone,
+    zoneLabel: rsiZoneLabel(zone),
+    ...buildRsiTimeframeStats(trades.filter((t) => zoneOf(t) === zone), minSampleSize),
+  }));
+}
+
+export interface RsiValueDistribution {
+  count: number;
+  average: number | null;
+  median: number | null;
+  min: number | null;
+  max: number | null;
+}
+
+function rsiValueDistribution(values: number[]): RsiValueDistribution {
+  if (!values.length) return { count: 0, average: null, median: null, min: null, max: null };
+  return {
+    count: values.length,
+    average: avg(values),
+    median: median(values),
+    min: Math.min(...values),
+    max: Math.max(...values),
+  };
+}
+
+export interface RsiValueAnalysis {
+  winners: RsiValueDistribution;
+  losers: RsiValueDistribution;
+}
+
+/**
+ * "Jakou RSI hodnotu mám nejčastěji na vítězných vs ztrátových obchodech?"
+ * Počítá se jen z obchodů, kde daný cross skutečně nastal a má uloženou
+ * číselnou hodnotu (starší obchody bez RSI dat se automaticky vynechají).
+ */
+function getRsiValueAnalysis(trades: TradeDTO[], timeframe: "15m" | "5m"): RsiValueAnalysis {
+  const valueOf = (t: TradeDTO) => (timeframe === "15m" ? t.rsi15mValue : t.rsi5mValue);
+  const crossedOf = (t: TradeDTO) => (timeframe === "15m" ? t.rsi15mCrossed : t.rsi5mCrossed);
+  const c = closed(trades).filter((t) => crossedOf(t) && valueOf(t) !== null);
+  const winnerVals = c.filter((t) => t.result === "WIN").map((t) => valueOf(t) as number);
+  const loserVals = c.filter((t) => t.result === "LOSS").map((t) => valueOf(t) as number);
+  return { winners: rsiValueDistribution(winnerVals), losers: rsiValueDistribution(loserVals) };
+}
+
+export interface RsiComboStats extends RsiTimeframeStats {
+  combo: "15M" | "15M+5M" | "5M";
+  label: string;
+}
+
+/** 15M-only / 15M+5M společně / 5M-only - viz požadavek na kombinační statistiky. */
+function getRsiComboStats(trades: TradeDTO[], minSampleSize: number): RsiComboStats[] {
+  const defs: { combo: RsiComboStats["combo"]; label: string; pred: (t: TradeDTO) => boolean }[] = [
+    { combo: "15M", label: "Pouze 15M RSI Cross", pred: (t) => t.rsi15mCrossed && !t.rsi5mCrossed },
+    { combo: "15M+5M", label: "15M + 5M RSI Cross", pred: (t) => t.rsi15mCrossed && t.rsi5mCrossed },
+    { combo: "5M", label: "Pouze 5M RSI Cross", pred: (t) => !t.rsi15mCrossed && t.rsi5mCrossed },
+  ];
+  return defs.map((d) => ({
+    combo: d.combo,
+    label: d.label,
+    ...buildRsiTimeframeStats(trades.filter(d.pred), minSampleSize),
+  }));
+}
+
+export interface RsiAnalytics {
+  timeframe15m: {
+    label: string;
+    overall: RsiTimeframeStats;
+    zones: RsiZoneRow[];
+    valueAnalysis: RsiValueAnalysis;
+  };
+  timeframe5m: {
+    label: string;
+    overall: RsiTimeframeStats;
+    zones: RsiZoneRow[];
+    valueAnalysis: RsiValueAnalysis;
+  };
+  combos: RsiComboStats[];
+  minSampleSize: number;
+}
+
+/** Souhrnný RSI Cross konfluence bundle - 15M (primární), 5M (sekundární), kombinace a RSI value analýza. */
+export function getRsiAnalytics(trades: TradeDTO[], minSampleSize = 10): RsiAnalytics {
+  return {
+    timeframe15m: {
+      label: "RSI Cross 15M (primární)",
+      overall: buildRsiTimeframeStats(trades.filter((t) => t.rsi15mCrossed), minSampleSize),
+      zones: getRsiZoneBreakdown(trades, "15m", minSampleSize),
+      valueAnalysis: getRsiValueAnalysis(trades, "15m"),
+    },
+    timeframe5m: {
+      label: "RSI Cross 5M (sekundární)",
+      overall: buildRsiTimeframeStats(trades.filter((t) => t.rsi5mCrossed), minSampleSize),
+      zones: getRsiZoneBreakdown(trades, "5m", minSampleSize),
+      valueAnalysis: getRsiValueAnalysis(trades, "5m"),
+    },
+    combos: getRsiComboStats(trades, minSampleSize),
+    minSampleSize,
+  };
+}
+
 /** Jeden souhrnný bundle pro Dashboard / Analytics - počítá se jen jednou nad filtrovanými daty. */
-export function getFullAnalytics(trades: TradeDTO[], startingBalance: number, minConfluenceSampleSize = 20) {
+export function getFullAnalytics(
+  trades: TradeDTO[],
+  startingBalance: number,
+  minConfluenceSampleSize = 20,
+  minRsiSampleSize = 10
+) {
   const c = closed(trades);
   return {
     totals: {
@@ -674,6 +828,7 @@ export function getFullAnalytics(trades: TradeDTO[], startingBalance: number, mi
       combos: getConfluenceComboStats(trades, minConfluenceSampleSize),
       minSampleSize: minConfluenceSampleSize,
     },
+    rsi: getRsiAnalytics(trades, minRsiSampleSize),
   };
 }
 
