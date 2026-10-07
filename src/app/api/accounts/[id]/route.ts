@@ -1,21 +1,27 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { accountUpdateSchema } from "@/lib/validation";
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const body = await req.json();
+  const parsed = accountUpdateSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Neplatná data", issues: parsed.error.issues }, { status: 400 });
+  }
+  const data = parsed.data;
   const account = await prisma.account.update({
     where: { id },
     data: {
-      name: body.name,
-      currency: body.currency,
-      startingBalance: body.startingBalance !== undefined ? Number(body.startingBalance) : undefined,
-      defaultRiskPct: body.defaultRiskPct !== undefined ? Number(body.defaultRiskPct) : undefined,
-      defaultInstrument: body.defaultInstrument,
-      defaultSession: body.defaultSession,
-      commissionPerSide: body.commissionPerSide !== undefined ? Number(body.commissionPerSide) : undefined,
-      timezone: body.timezone,
-      breakevenThreshold: body.breakevenThreshold !== undefined ? Number(body.breakevenThreshold) : undefined,
+      name: data.name,
+      currency: data.currency,
+      startingBalance: data.startingBalance,
+      defaultRiskPct: data.defaultRiskPct,
+      defaultInstrument: data.defaultInstrument,
+      defaultSession: data.defaultSession,
+      commissionPerSide: data.commissionPerSide,
+      timezone: data.timezone,
+      breakevenThreshold: data.breakevenThreshold,
     },
   });
   return NextResponse.json(account);

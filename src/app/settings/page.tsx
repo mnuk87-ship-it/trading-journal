@@ -20,9 +20,21 @@ export default function SettingsPage() {
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const [newAccount, setNewAccount] = useState({ name: "", currency: "USD", startingBalance: "10000" });
   const [creating, setCreating] = useState(false);
+
+  // Validuje číselné pole: prázdný string nebo nečíselná hodnota je chyba,
+  // aby se zabránilo tichému dopadu Number("") === 0 (např. vymazání pole
+  // "Počáteční balance" by jinak nechtěně uložilo balance = 0).
+  function parseRequiredNumber(value: string, label: string): number {
+    const trimmed = value.trim();
+    if (trimmed === "") throw new Error(`${label}: pole nesmí být prázdné`);
+    const n = Number(trimmed);
+    if (!Number.isFinite(n)) throw new Error(`${label}: musí být platné číslo`);
+    return n;
+  }
 
   useEffect(() => {
     if (!account) return;
@@ -45,26 +57,43 @@ export default function SettingsPage() {
 
   async function handleSave() {
     if (!accountId) return;
-    setSaving(true);
     setSaved(false);
+    setFormError(null);
+
+    let payload: Record<string, unknown>;
     try {
-      await fetch(`/api/accounts/${accountId}`, {
+      if (!form.name.trim()) throw new Error("Název účtu: pole nesmí být prázdné");
+      payload = {
+        name: form.name.trim(),
+        currency: form.currency,
+        startingBalance: parseRequiredNumber(form.startingBalance, "Počáteční balance"),
+        defaultRiskPct: parseRequiredNumber(form.defaultRiskPct, "Výchozí risk %"),
+        defaultInstrument: form.defaultInstrument.toUpperCase(),
+        defaultSession: form.defaultSession,
+        commissionPerSide: parseRequiredNumber(form.commissionPerSide, "Komise / strana"),
+        timezone: form.timezone,
+        breakevenThreshold: parseRequiredNumber(form.breakevenThreshold, "Breakeven threshold"),
+      };
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : "Neplatná hodnota ve formuláři");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/accounts/${accountId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: form.name,
-          currency: form.currency,
-          startingBalance: Number(form.startingBalance),
-          defaultRiskPct: Number(form.defaultRiskPct),
-          defaultInstrument: form.defaultInstrument.toUpperCase(),
-          defaultSession: form.defaultSession,
-          commissionPerSide: Number(form.commissionPerSide),
-          timezone: form.timezone,
-          breakevenThreshold: Number(form.breakevenThreshold),
-        }),
+        body: JSON.stringify(payload),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error ?? "Uložení se nezdařilo");
+      }
       await refreshAccounts();
       setSaved(true);
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : "Uložení se nezdařilo");
     } finally {
       setSaving(false);
     }
@@ -72,6 +101,15 @@ export default function SettingsPage() {
 
   async function handleCreateAccount() {
     if (!newAccount.name.trim()) return;
+    setFormError(null);
+    let startingBalance: number;
+    try {
+      startingBalance = parseRequiredNumber(newAccount.startingBalance, "Počáteční balance");
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : "Neplatná hodnota ve formuláři");
+      return;
+    }
+
     setCreating(true);
     try {
       const res = await fetch("/api/accounts", {
@@ -80,13 +118,19 @@ export default function SettingsPage() {
         body: JSON.stringify({
           name: newAccount.name.trim(),
           currency: newAccount.currency,
-          startingBalance: Number(newAccount.startingBalance),
+          startingBalance,
         }),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error ?? "Vytvoření účtu se nezdařilo");
+      }
       const created = await res.json();
       await refreshAccounts();
       setAccountId(created.id);
       setNewAccount({ name: "", currency: "USD", startingBalance: "10000" });
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : "Vytvoření účtu se nezdařilo");
     } finally {
       setCreating(false);
     }
@@ -202,6 +246,8 @@ export default function SettingsPage() {
               <input type="number" step="any" value={form.breakevenThreshold} onChange={(e) => set("breakevenThreshold", e.target.value)} />
             </div>
           </div>
+
+          {formError && <p className="text-sm text-red mt-3">{formError}</p>}
 
           <div className="flex items-center gap-3 mt-4">
             <button onClick={handleSave} disabled={saving} className="bg-accent text-white text-sm font-semibold px-4 py-2 rounded-lg disabled:opacity-50">
